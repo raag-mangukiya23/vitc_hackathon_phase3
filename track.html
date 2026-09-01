@@ -3,152 +3,59 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CivicSync — Authority Command Center</title>
+  <title>Track a complaint — CivicSync</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: #f8fafc; }
-    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
-    @keyframes scaleIn { from { opacity: 0; transform: scale(0.96) translateY(4px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-    .anim-scale { animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-
-    .severity-pin { width: 26px; height: 26px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.35); }
-    .severity-pin.critical { background: #dc2626; }
-    .severity-pin.high { background: #f59e0b; }
-    .severity-pin.medium { background: #10b981; }
-    .severity-pin.low { background: #64748b; }
-    .severity-pin-inner { transform: rotate(45deg); color: white; font-size: 11px; font-weight: 900; }
-
-    @keyframes overduePulse { 0%,100% { box-shadow: 0 0 0 0 rgba(220,38,38,.45); } 50% { box-shadow: 0 0 0 7px rgba(220,38,38,0); } }
-    .overdue-card { animation: overduePulse 2s ease-out infinite; }
-    @media (prefers-reduced-motion: reduce) { .overdue-card, .anim-scale { animation: none; } }
+    @keyframes scaleIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    .anim-scale { animation: scaleIn 0.25s cubic-bezier(0.16,1,0.3,1) forwards; }
+    .wipe-wrap { position: relative; overflow: hidden; border-radius: 0.75rem; }
+    .wipe-wrap img { display: block; width: 100%; height: 14rem; object-fit: cover; }
+    .wipe-after { position: absolute; inset: 0; }
+    .wipe-handle { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.25); pointer-events: none; }
+    .wipe-range { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: ew-resize; margin: 0; }
+    @media (prefers-reduced-motion: reduce) { .anim-scale { animation: none; } }
   </style>
 </head>
 <body class="bg-slate-50 text-slate-900 antialiased min-h-screen flex flex-col font-sans">
 
-  <header class="sticky top-0 z-40 bg-slate-900 text-white shadow-md">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
-      <div class="flex items-center gap-3">
-        <div class="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-md font-black text-lg">🛡️</div>
-        <div class="flex items-center gap-2">
-          <span class="font-extrabold text-base sm:text-lg tracking-tight">Civic<span class="text-blue-400">Sync</span></span>
-          <span class="px-2 py-0.5 text-[10px] font-bold uppercase bg-blue-500/20 text-blue-300 rounded-full border border-blue-500/30">Authority Portal</span>
-        </div>
-      </div>
-      <div class="flex items-center gap-2">
-        <a href="dashboard.html" class="hidden sm:inline px-3 py-1.5 rounded-xl border border-white/20 bg-white/5 text-xs font-bold hover:bg-white/10 transition">📊 Public Dashboard</a>
-        <button id="logoutBtn" onclick="logoutAuthority()" class="hidden px-3 py-1.5 rounded-xl border border-white/20 bg-white/5 text-xs font-bold hover:bg-white/10 text-red-300 transition">Log Out</button>
-      </div>
+  <header class="bg-white border-b border-slate-200 shadow-sm">
+    <div class="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+      <a href="index.html" class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-md font-black text-lg">⚡</div>
+        <span class="font-extrabold text-base tracking-tight">Civic<span class="text-blue-600">Sync</span></span>
+      </a>
+      <select id="langSelect" onchange="setLang(this.value)"
+        class="px-2 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none focus:border-blue-600"></select>
     </div>
   </header>
 
-  <main class="max-w-7xl w-full mx-auto p-4 sm:p-6 flex-1 space-y-6">
-
-    <!-- LOGIN GATE -->
-    <div id="loginGate" class="max-w-md mx-auto anim-scale">
-      <div class="rounded-3xl bg-white border border-slate-200 shadow-2xl overflow-hidden">
-        <div class="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white p-6 sm:p-8 space-y-2">
-          <h3 class="text-xl font-black">Authorized Personnel Only</h3>
-          <p class="text-xs text-slate-300 leading-relaxed">Sign in with your Municipal Officer credentials to access the incident command center.</p>
-        </div>
-        <form id="authorityForm" class="p-6 sm:p-8 space-y-4">
-          <div id="authorityAlert" class="hidden p-3 rounded-xl text-xs font-bold bg-red-50 text-red-700 border border-red-200"></div>
-          <div class="space-y-1">
-            <label class="text-xs font-bold text-slate-900">Email Address</label>
-            <input type="email" id="authorityEmail" class="w-full p-3 rounded-xl border border-slate-200 text-xs font-medium outline-none focus:border-blue-600" required />
-          </div>
-          <div class="space-y-1">
-            <label class="text-xs font-bold text-slate-900">Password</label>
-            <input type="password" id="authorityPassword" class="w-full p-3 rounded-xl border border-slate-200 text-xs font-medium outline-none focus:border-blue-600" required />
-          </div>
-          <button type="submit" class="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs shadow-lg transition">Authority Login</button>
-        </form>
+  <main class="max-w-2xl w-full mx-auto p-4 sm:p-6 flex-1 space-y-5">
+    <!-- Lookup -->
+    <div class="p-4 rounded-3xl bg-white border border-slate-200 shadow-sm space-y-2">
+      <label class="text-xs font-bold text-slate-900">Complaint reference</label>
+      <div class="flex gap-2">
+        <input id="idInput" placeholder="TCK-2026-1234"
+          class="flex-1 p-3 rounded-xl border border-slate-200 text-xs font-mono font-bold outline-none focus:border-blue-600" />
+        <button onclick="lookup()" class="px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow transition">Track</button>
       </div>
+      <p class="text-[10px] text-slate-400">Anyone with the reference can read this page. No account needed.</p>
     </div>
 
-    <!-- DASHBOARD -->
-    <div id="dashboard" class="hidden space-y-6 anim-scale">
-      <div class="p-5 rounded-3xl bg-slate-900 text-white shadow-xl">
-        <h2 class="text-xl font-extrabold">Authority Incident Triage &amp; City Map</h2>
-        <p class="text-xs text-slate-400 mt-1">Live severity-graded map of every reported hazard across the city.</p>
-      </div>
-
-      <!-- SLA / workload strip -->
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div class="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm">
-          <div class="text-[10px] font-bold uppercase text-slate-500">Open tickets</div>
-          <div class="text-2xl font-black" id="statOpen">0</div>
-        </div>
-        <div class="p-4 rounded-2xl bg-white border border-red-200 shadow-sm">
-          <div class="text-[10px] font-bold uppercase text-red-600">Breached SLA</div>
-          <div class="text-2xl font-black text-red-600" id="statOverdue">0</div>
-        </div>
-        <div class="p-4 rounded-2xl bg-white border border-amber-200 shadow-sm">
-          <div class="text-[10px] font-bold uppercase text-amber-600">Due within 1h</div>
-          <div class="text-2xl font-black text-amber-600" id="statDueSoon">0</div>
-        </div>
-        <div class="p-4 rounded-2xl bg-white border border-emerald-200 shadow-sm">
-          <div class="text-[10px] font-bold uppercase text-emerald-600">Resolved</div>
-          <div class="text-2xl font-black text-emerald-600" id="statResolved">0</div>
-        </div>
-      </div>
-
-      <div class="rounded-3xl bg-white border border-slate-200 shadow-lg overflow-hidden">
-        <div class="flex items-center gap-4 px-4 py-2.5 border-b border-slate-100 text-[11px] font-bold text-slate-500 flex-wrap">
-          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-red-600"></span> Critical</span>
-          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span> High</span>
-          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Medium</span>
-          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-slate-500"></span> Low</span>
-        </div>
-        <div id="cityMap" class="h-80 w-full"></div>
-      </div>
-
-      <!-- Filters -->
-      <div class="flex flex-wrap items-center gap-2">
-        <span class="text-[11px] font-bold text-slate-500">Filter:</span>
-        <button data-filter="all"      onclick="setFilter('all')"      class="filter-btn px-3 py-1.5 rounded-xl text-xs font-bold border transition">All</button>
-        <button data-filter="overdue"  onclick="setFilter('overdue')"  class="filter-btn px-3 py-1.5 rounded-xl text-xs font-bold border transition">⏰ Overdue</button>
-        <button data-filter="critical" onclick="setFilter('critical')" class="filter-btn px-3 py-1.5 rounded-xl text-xs font-bold border transition">🚨 Critical</button>
-        <button data-filter="flagged"  onclick="setFilter('flagged')"  class="filter-btn px-3 py-1.5 rounded-xl text-xs font-bold border transition">⚠ Needs review</button>
-        <button data-filter="open"     onclick="setFilter('open')"     class="filter-btn px-3 py-1.5 rounded-xl text-xs font-bold border transition">📂 Unresolved</button>
-      </div>
-
-      <div id="authorityTicketList" class="space-y-4"></div>
-    </div>
+    <div id="result" class="space-y-5"></div>
   </main>
 
-  <!-- Resolve Confirmation Modal -->
-  <div id="modalResolve" class="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm hidden flex items-center justify-center p-4">
-    <div class="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-5 anim-scale relative">
-      <button type="button" onclick="closeResolveModal()" class="absolute top-4 right-4 text-slate-500 hover:text-slate-900 w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center font-bold">✕</button>
-      <div class="space-y-1">
-        <h3 class="text-lg font-black text-slate-900">Confirm Resolution</h3>
-        <p class="text-xs text-slate-500">Upload a photo proving the hazard has been fixed. This is required before the ticket can be marked as resolved.</p>
-      </div>
-      <div id="resolveClusterNote" class="hidden p-2.5 rounded-xl text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200"></div>
-      <div class="space-y-1">
-        <label class="text-xs font-bold text-slate-900">Proof of Fix <span class="text-red-500">*</span></label>
-        <input type="file" id="resolvePhotoInput" accept="image/*" onchange="handleResolvePhotoSelect(event)" class="w-full text-[11px] text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:bg-blue-50 file:text-blue-700 file:text-xs file:font-bold file:cursor-pointer hover:file:bg-blue-100" />
-        <div id="resolvePhotoPreviewWrap" class="hidden pt-1 flex items-center gap-2">
-          <img id="resolvePhotoPreview" class="h-24 w-24 rounded-xl border border-slate-200 object-cover" alt="Proof of fix preview" />
-          <button type="button" onclick="clearResolvePhoto()" class="text-[10px] font-bold text-red-600">Remove</button>
-        </div>
-      </div>
-      <div id="resolveModalError" class="hidden p-2.5 rounded-xl text-[11px] font-bold bg-red-50 text-red-700 border border-red-200"></div>
-      <div class="grid grid-cols-2 gap-2">
-        <button type="button" onclick="closeResolveModal()" class="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition">Cancel</button>
-        <button type="button" id="confirmResolveBtn" onclick="confirmResolve()" class="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow transition">✅ Confirm &amp; Resolve</button>
-      </div>
-    </div>
-  </div>
+  <footer class="max-w-2xl w-full mx-auto px-4 pb-8 flex gap-4">
+    <a href="index.html" class="text-[10px] font-semibold text-slate-400 hover:text-slate-600">File your own report →</a>
+    <a href="dashboard.html" class="text-[10px] font-semibold text-slate-400 hover:text-slate-600">City dashboard →</a>
+  </footer>
 
-  <div id="toast" class="hidden fixed bottom-5 left-1/2 -translate-x-1/2 z-[60] px-4 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold shadow-2xl anim-scale"></div>
+  <div id="toast" class="hidden fixed bottom-5 left-1/2 -translate-x-1/2 z-[60] px-4 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold shadow-2xl"></div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getFirestore, collection, onSnapshot, query, orderBy, updateDoc, doc }
+    import { getFirestore, collection, query, where, onSnapshot }
       from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
     // =================================================================
@@ -684,441 +591,162 @@
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
-    const complaintsRef = collection(db, "complaints");
+    const complaintsRef = collection(db, 'complaints');
 
-    const AUTH_EMAIL = AUTHORITY_EMAIL;
-    const AUTH_PASSWORD = AUTHORITY_PASSWORD;
-    const SESSION_KEY = AUTHORITY_SESSION_KEY;
+    let lang = 'en';
+    let current = null;
+    let unsub = null;
+    let miniMap = null;
 
+    (function buildLangSelect() {
+      const sel = document.getElementById('langSelect');
+      sel.innerHTML = LANGUAGES.map(l => `<option value="${l.code}">${l.native}</option>`).join('');
+    })();
 
-    // sessionStorage throws a SecurityError on opaque origins (sandboxed
-    // iframes, some private windows). It used to be called bare at the bottom
-    // of this module, so the throw killed the script and left the login form
-    // with no submit handler. These wrappers degrade to a session that simply
-    // does not persist across a reload.
-    const safeStore = {
-      get(k) { try { return sessionStorage.getItem(k); } catch { return memSession[k] ?? null; } },
-      set(k, v) { try { sessionStorage.setItem(k, v); } catch { memSession[k] = v; } },
-      remove(k) { try { sessionStorage.removeItem(k); } catch { delete memSession[k]; } }
-    };
-    const memSession = {};
+    window.setLang = function(code) { lang = code; if (current) paint(current); };
 
-    let cityMap = null;
-    let markers = {};
-    let latestTickets = [];
-    let activeFilter = 'all';
-
-    function showToast(msg) {
+    function toast(msg) {
       const el = document.getElementById('toast');
       el.innerText = msg;
       el.classList.remove('hidden');
       clearTimeout(window._t);
-      window._t = setTimeout(() => el.classList.add('hidden'), 3000);
+      window._t = setTimeout(() => el.classList.add('hidden'), 2500);
     }
 
-    function initCityMap() {
-      if (cityMap) return;
-      cityMap = L.map('cityMap').setView([12.9716, 77.5946], 12);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors',
-        maxZoom: 19
-      }).addTo(cityMap);
-      setTimeout(() => cityMap.invalidateSize(), 150);
-    }
-
-    function severityClass(priority) {
-      return ['critical', 'high', 'medium', 'low'].includes(priority) ? priority : 'medium';
-    }
-
-    function pinIcon(priority) {
-      const cls = severityClass(priority);
-      const emoji = cls === 'critical' ? '⚠' : cls === 'high' ? '!' : '•';
-      return L.divIcon({
-        className: '',
-        html: `<div class="severity-pin ${cls}"><span class="severity-pin-inner">${emoji}</span></div>`,
-        iconSize: [26, 26],
-        iconAnchor: [13, 26]
-      });
-    }
-
-    function renderMapMarkers(tickets) {
-      if (!cityMap) return;
-      Object.values(markers).forEach(m => cityMap.removeLayer(m));
-      markers = {};
-      tickets.forEach(tk => {
-        if (typeof tk.lat !== 'number' || typeof tk.lng !== 'number') return;
-        const marker = L.marker([tk.lat, tk.lng], { icon: pinIcon(tk.priority) }).addTo(cityMap);
-        const count = (tk.reportCount || 1) > 1 ? `<br><b>👥 ${tk.reportCount} citizens reported this</b>` : '';
-        marker.bindPopup(
-          `<b>${esc(tk.ticketId)}</b><br>${esc(tk.text)}${count}<br><span style="color:#64748b">${esc(tk.location)}</span>`
-        );
-        markers[tk.id] = marker;
-      });
-    }
-
-    window.focusTicketOnMap = function(id) {
-      const marker = markers[id];
-      if (!marker || !cityMap) return;
-      cityMap.setView(marker.getLatLng(), 16, { animate: true });
-      marker.openPopup();
-      document.getElementById('cityMap').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    window.wipe = function(id, value) {
+      const wrap = document.getElementById(id);
+      if (!wrap) return;
+      wrap.querySelector('.wipe-after').style.clipPath = `inset(0 0 0 ${value}%)`;
+      wrap.querySelector('.wipe-handle').style.left = `${value}%`;
     };
 
-    window.setTicketStatus = async function(id, status) {
+    window.shareThis = async function() {
+      if (!current) return;
+      const url = trackUrl(current.ticketId);
       try {
-        const patch = { status };
-        // Starting work stops the clock from screaming; resolution is handled
-        // by the proof-of-fix modal instead.
-        if (status === 'Dispatched') patch.dispatchedAt = new Date();
-        await updateDoc(doc(db, "complaints", id), patch);
-      } catch (err) {
-        alert("Couldn't update the ticket status.");
-      }
+        if (navigator.share) { await navigator.share({ title: `CivicSync ${current.ticketId}`, url }); return; }
+        await navigator.clipboard.writeText(url);
+        toast('Link copied');
+      } catch (e) { if (e.name !== 'AbortError') window.prompt('Copy this link:', url); }
     };
 
-    window.setFilter = function(f) {
-      activeFilter = f;
-      paintFilterButtons();
-      renderTickets(latestTickets);
-    };
+    const STAGES = ['Submitted', 'Dispatched', 'Resolved'];
 
-    function paintFilterButtons() {
-      document.querySelectorAll('.filter-btn').forEach(b => {
-        const on = b.dataset.filter === activeFilter;
-        b.className = `filter-btn px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
-          on ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'}`;
-      });
-    }
+    function paint(tk) {
+      const color = priorityColor(tk.priority);
+      const status = tk.status || 'Submitted';
+      const sla = slaState(tk);
+      const stageIdx = status === 'Resolved' ? 2 : status === 'Dispatched' ? 1 : 0;
+      const displayText = tk.originalText || tk.text;
 
-    // =================================================================
-    // SLA AUTO-ESCALATION
-    // Runs client-side on a timer. Any unresolved ticket past its deadline
-    // is flagged Overdue once, has its priority bumped one level, and is
-    // never re-escalated (guarded by escalatedAt).
-    // =================================================================
-    const escalating = new Set();
-
-    function bumpPriority(p) {
-      if (p === 'low') return 'medium';
-      if (p === 'medium') return 'high';
-      return 'critical';
-    }
-
-    async function enforceSla(tickets) {
-      const due = tickets.filter(tk => {
-        if ((tk.status || 'Submitted') === 'Resolved') return false;
-        if (tk.escalatedAt) return false;
-        if (escalating.has(tk.id)) return false;
-        return slaState(tk).overdue;
-      });
-      if (!due.length) return;
-
-      for (const tk of due) {
-        escalating.add(tk.id);
-        const newPriority = bumpPriority(tk.priority || 'medium');
-        try {
-          await updateDoc(doc(db, 'complaints', tk.id), {
-            overdue: true,
-            escalatedAt: new Date(),
-            priority: newPriority,
-            score: Math.min(99, (tk.score || 50) + 10),
-            escalationNote: `SLA of ${tk.slaHours || '?'}h breached — auto-escalated to ${newPriority}.`
-          });
-          showToast(`⏰ ${tk.ticketId} breached SLA — escalated to ${newPriority.toUpperCase()}`);
-        } catch (err) {
-          console.warn('Escalation write failed', err);
-        } finally {
-          escalating.delete(tk.id);
-        }
-      }
-    }
-
-    // =================================================================
-    // RESOLVE FLOW (proof photo still mandatory)
-    // =================================================================
-    let resolveTicketId = null;
-    let resolvePhotoData = null;
-    let resolveClusterIds = [];
-
-    window.openResolveModal = function(id) {
-      resolveTicketId = id;
-      resolvePhotoData = null;
-      document.getElementById('resolvePhotoInput').value = '';
-      document.getElementById('resolvePhotoPreviewWrap').classList.add('hidden');
-      document.getElementById('resolveModalError').classList.add('hidden');
-
-      // Resolving a clustered hazard closes every linked report at once.
-      const head = latestTickets.find(x => x.id === id);
-      const cid = head ? (head.clusterId || head.ticketId) : null;
-      resolveClusterIds = cid
-        ? latestTickets.filter(x => (x.clusterId || x.ticketId) === cid && x.status !== 'Resolved').map(x => x.id)
-        : [id];
-
-      const note = document.getElementById('resolveClusterNote');
-      if (resolveClusterIds.length > 1) {
-        note.innerText = `This hazard has ${resolveClusterIds.length} linked citizen reports. Confirming will close all of them and send the proof photo to every reporter.`;
-        note.classList.remove('hidden');
-      } else {
-        note.classList.add('hidden');
-      }
-
-      const btn = document.getElementById('confirmResolveBtn');
-      btn.disabled = false; btn.innerText = '✅ Confirm & Resolve';
-      document.getElementById('modalResolve').classList.remove('hidden');
-    };
-
-    window.closeResolveModal = function() {
-      document.getElementById('modalResolve').classList.add('hidden');
-      resolveTicketId = null;
-      resolvePhotoData = null;
-      resolveClusterIds = [];
-    };
-
-    window.handleResolvePhotoSelect = function(e) {
-      const file = e.target.files[0];
-      if (!file) return;
-      if (file.size > 900000) {
-        alert("Please choose an image under ~900KB.");
-        e.target.value = "";
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = function(ev) {
-        resolvePhotoData = ev.target.result;
-        document.getElementById('resolvePhotoPreview').src = resolvePhotoData;
-        document.getElementById('resolvePhotoPreviewWrap').classList.remove('hidden');
-        document.getElementById('resolveModalError').classList.add('hidden');
-      };
-      reader.readAsDataURL(file);
-    };
-
-    window.clearResolvePhoto = function() {
-      resolvePhotoData = null;
-      document.getElementById('resolvePhotoInput').value = '';
-      document.getElementById('resolvePhotoPreviewWrap').classList.add('hidden');
-    };
-
-    window.confirmResolve = async function() {
-      const errEl = document.getElementById('resolveModalError');
-      if (!resolvePhotoData) {
-        errEl.innerText = "A photo of the completed fix is required to mark this ticket resolved.";
-        errEl.classList.remove('hidden');
-        return;
-      }
-      const btn = document.getElementById('confirmResolveBtn');
-      btn.disabled = true; btn.innerText = "Saving...";
-      const targets = resolveClusterIds.length ? resolveClusterIds : [resolveTicketId];
-      try {
-        await Promise.all(targets.map(id => updateDoc(doc(db, "complaints", id), {
-          status: 'Resolved',
-          resolutionPhotoData: resolvePhotoData,
-          resolvedAt: new Date()
-        })));
-        showToast(targets.length > 1 ? `Closed ${targets.length} linked reports` : 'Ticket resolved');
-        closeResolveModal();
-      } catch (err) {
-        errEl.innerText = "Couldn't save the resolution. Please try again.";
-        errEl.classList.remove('hidden');
-        btn.disabled = false; btn.innerText = '✅ Confirm & Resolve';
-      }
-    };
-
-    const statusStyles = {
-      'Submitted': 'bg-slate-100 text-slate-600',
-      'Dispatched': 'bg-blue-100 text-blue-700',
-      'On Hold': 'bg-amber-100 text-amber-700',
-      'Resolved': 'bg-emerald-100 text-emerald-700'
-    };
-
-    // =================================================================
-    // RENDER
-    // =================================================================
-    function groupByCluster(tickets) {
-      // One card per real-world hazard. The oldest report in a cluster is the
-      // head; the rest are folded into it behind a counter.
-      const groups = new Map();
-      tickets.forEach(tk => {
-        const cid = tk.clusterId || tk.ticketId;
-        if (!groups.has(cid)) groups.set(cid, []);
-        groups.get(cid).push(tk);
-      });
-      return [...groups.values()].map(members => {
-        members.sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
-        return { head: members[0], members };
-      });
-    }
-
-    function passesFilter(head) {
-      const status = head.status || 'Submitted';
-      const sla = slaState(head);
-      switch (activeFilter) {
-        case 'overdue':  return sla.overdue;
-        case 'critical': return head.priority === 'critical';
-        case 'flagged':  return !!head.flagged;
-        case 'open':     return status !== 'Resolved';
-        default:         return true;
-      }
-    }
-
-    function renderTickets(tickets) {
-      // Stats strip
-      const open = tickets.filter(x => (x.status || 'Submitted') !== 'Resolved');
-      document.getElementById('statOpen').innerText = open.length;
-      document.getElementById('statResolved').innerText = tickets.length - open.length;
-      document.getElementById('statOverdue').innerText = open.filter(x => slaState(x).overdue).length;
-      document.getElementById('statDueSoon').innerText =
-        open.filter(x => { const s = slaState(x); return !s.overdue && s.msLeft < 3600000; }).length;
-
-      const groups = groupByCluster(tickets)
-        .filter(g => passesFilter(g.head))
-        .sort((a, b) => {
-          const rank = { critical: 0, high: 1, medium: 2, low: 3 };
-          const ao = slaState(a.head).overdue ? -1 : 0;
-          const bo = slaState(b.head).overdue ? -1 : 0;
-          if (ao !== bo) return ao - bo;
-          const pr = (rank[a.head.priority] ?? 2) - (rank[b.head.priority] ?? 2);
-          if (pr !== 0) return pr;
-          return toMillis(b.head.timestamp) - toMillis(a.head.timestamp);
-        });
-
-      let html = "";
-      groups.forEach(({ head, members }) => {
-        const tk = head;
-        const color = priorityColor(tk.priority);
-        const status = tk.status || 'Submitted';
-        const sla = slaState(tk);
-        const count = Math.max(members.length, tk.reportCount || 1);
-
-        const clusterChip = count > 1
-          ? `<span class="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">👥 ${count} citizens reported this</span>` : '';
-
-        const slaChip = `<span class="text-[10px] font-black px-2 py-0.5 rounded-full bg-${sla.tone}-100 text-${sla.tone}-700">⏱️ ${esc(sla.label)}</span>`;
-
-        const overdueChip = sla.overdue
-          ? `<span class="text-[10px] font-black px-2 py-0.5 rounded-full bg-red-600 text-white">OVERDUE</span>` : '';
-
-        const flagBanner = tk.flagged
-          ? `<div class="p-2.5 rounded-xl bg-red-50 border border-red-200 text-[11px] font-bold text-red-700">⚠ Photo/description mismatch — ${esc(tk.flagReason || 'flagged by the vision check')}. Verify before dispatching.</div>` : '';
-
-        const escalationBanner = tk.escalationNote
-          ? `<div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] font-bold text-amber-800">⏰ ${esc(tk.escalationNote)}</div>` : '';
-
-        const langNote = (tk.originalLang && tk.originalLang !== 'en' && tk.originalText)
-          ? `<p class="text-[10px] text-slate-500 italic">Filed in ${esc(langByCode(tk.originalLang).name)}: “${esc(tk.originalText)}”</p>` : '';
-
-        const linked = count > 1
-          ? `<details class="pt-1">
-               <summary class="text-[11px] font-bold text-indigo-600 cursor-pointer">Show ${count - 1} linked report${count > 2 ? 's' : ''}</summary>
-               <div class="pt-2 space-y-1">
-                 ${members.slice(1).map(m => `
-                   <div class="text-[11px] text-slate-500 flex items-center gap-2">
-                     <span class="font-mono font-bold">${esc(m.ticketId)}</span>
-                     <span>${esc((m.originalText || m.text || '').slice(0, 70))}</span>
-                     <span class="text-slate-400">${esc(formatDate(m.timestamp))}</span>
-                   </div>`).join('')}
-               </div>
-             </details>` : '';
-
-        html += `
-          <div class="p-5 rounded-2xl bg-white border ${sla.overdue ? 'border-red-300 overdue-card' : 'border-slate-200'} shadow-sm flex flex-col gap-4">
-            <div class="flex flex-col sm:flex-row justify-between gap-4">
-              <div class="flex-1 space-y-1.5">
-                <div class="flex items-center gap-2 flex-wrap">
-                  <span class="font-mono text-xs font-black px-1.5 py-0.5 rounded bg-slate-100">${esc(tk.ticketId)}</span>
-                  <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-${color}-100 text-${color}-700">${esc(tk.priority)} ${tk.score ? '· ' + tk.score : ''}</span>
-                  <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${statusStyles[status] || statusStyles['Submitted']}">${esc(status)}</span>
-                  ${slaChip}${overdueChip}${clusterChip}
-                </div>
-                <h4 class="text-xs font-extrabold">${esc(tk.summary || tk.text)}</h4>
-                <p class="text-[11px] text-slate-600 leading-relaxed">${esc(tk.text)}</p>
-                ${langNote}
-                <div class="text-[11px] text-slate-500">📍 ${esc(tk.location)} &bull; 🏢 ${esc(tk.department)} &bull; 🗂️ ${esc(tk.category || 'Uncategorised')}</div>
-                <div class="text-[10px] text-slate-400">Filed ${esc(formatDate(tk.timestamp))} &bull; SLA ${esc(slaLabel(tk.slaHours || 72))} &bull; Ward ${esc(tk.ward || 'Unassigned')}</div>
-                ${tk.aiReasoning ? `<p class="text-[10px] text-slate-500 leading-relaxed">🧠 ${esc(tk.aiReasoning)}${tk.aiEngine === 'gemini' ? '' : ' (rule engine)'}</p>` : ''}
-                ${tk.photoFindings ? `<p class="text-[10px] text-slate-500 leading-relaxed">📷 ${esc(tk.photoFindings)}</p>` : ''}
-                <div class="flex items-center gap-3 flex-wrap pt-0.5">
-                  ${typeof tk.lat === 'number' ? `<button onclick="focusTicketOnMap('${esc(tk.id)}')" class="text-[11px] font-bold text-blue-600 hover:underline">📍 View on Map</button>` : ''}
-                  <a href="${esc(trackUrl(tk.ticketId))}" target="_blank" rel="noopener" class="text-[11px] font-bold text-blue-600 hover:underline">🔗 Public status page</a>
-                </div>
-                ${linked}
-                ${tk.resolutionPhotoData ? `
-                  <div class="pt-1.5 flex items-center gap-2">
-                    <img src="${tk.resolutionPhotoData}" class="h-14 w-14 rounded-lg object-cover border border-emerald-200" alt="Proof of fix" />
-                    <span class="text-[10px] font-bold text-emerald-700">✅ Proof of fix on file</span>
-                  </div>` : ''}
-              </div>
-              ${tk.photoData ? `<img src="${tk.photoData}" class="w-20 h-20 rounded-xl object-cover border border-slate-200 self-start" alt="Reported issue" />` : ''}
+      const timeline = STAGES.map((s, i) => {
+        const done = i <= stageIdx;
+        const stamp = i === 0 ? formatDate(tk.timestamp)
+                    : i === 1 ? (tk.dispatchedAt ? formatDate(tk.dispatchedAt) : '')
+                    : (tk.resolvedAt ? formatDate(tk.resolvedAt) : '');
+        return `
+          <div class="flex gap-3">
+            <div class="flex flex-col items-center">
+              <div class="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black ${
+                done ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'}">${done ? '✓' : i + 1}</div>
+              ${i < STAGES.length - 1 ? `<div class="w-0.5 flex-1 ${i < stageIdx ? 'bg-emerald-500' : 'bg-slate-200'}"></div>` : ''}
             </div>
-            ${flagBanner}
-            ${escalationBanner}
-            <div class="flex flex-wrap gap-2 pt-3 border-t border-slate-100">
-              <button onclick="setTicketStatus('${esc(tk.id)}', 'Dispatched')" ${status === 'Dispatched' ? 'disabled' : ''} class="px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm transition ${status === 'Dispatched' ? 'bg-blue-100 text-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500 text-white'}">🚚 Dispatch Team</button>
-              <button onclick="openResolveModal('${esc(tk.id)}')" ${status === 'Resolved' ? 'disabled' : ''} class="px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm transition ${status === 'Resolved' ? 'bg-emerald-100 text-emerald-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}">✅ Mark as Done</button>
-              <button onclick="setTicketStatus('${esc(tk.id)}', 'On Hold')" ${status === 'On Hold' ? 'disabled' : ''} class="px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm transition ${status === 'On Hold' ? 'bg-amber-100 text-amber-400 cursor-not-allowed' : 'bg-amber-500 hover:bg-amber-400 text-white'}">⏸️ Put on Hold</button>
+            <div class="pb-4">
+              <div class="text-xs font-bold ${done ? 'text-slate-900' : 'text-slate-400'}">${esc(t(s, lang))}</div>
+              <div class="text-[10px] text-slate-400">${esc(stamp)}</div>
             </div>
+          </div>`;
+      }).join('');
+
+      const beforeAfter = (tk.photoData && tk.resolutionPhotoData) ? `
+        <div class="space-y-1">
+          <div class="flex items-center justify-between text-[10px] font-bold text-slate-500">
+            <span>${esc(t('before', lang))}</span><span>${esc(t('after', lang))}</span>
           </div>
-        `;
+          <div class="wipe-wrap border border-slate-200" id="wipeTrack">
+            <img src="${tk.photoData}" alt="Before the repair" />
+            <div class="wipe-after" style="clip-path: inset(0 0 0 50%);">
+              <img src="${tk.resolutionPhotoData}" alt="After the repair" />
+            </div>
+            <div class="wipe-handle" style="left:50%"></div>
+            <input type="range" min="0" max="100" value="50" class="wipe-range"
+                   aria-label="Drag to compare before and after" oninput="wipe('wipeTrack', this.value)" />
+          </div>
+        </div>` : (tk.photoData ? `<img src="${tk.photoData}" class="w-full h-52 object-cover rounded-xl border border-slate-200" alt="Reported issue" />` : '');
+
+      document.getElementById('result').innerHTML = `
+        <div class="p-5 rounded-3xl bg-white border ${sla.overdue ? 'border-red-300' : 'border-slate-200'} shadow-lg space-y-4 anim-scale">
+          <div class="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <div class="font-mono text-lg font-black text-blue-600">${esc(tk.ticketId)}</div>
+              <div class="text-[11px] text-slate-500">${esc(tk.location || '')}</div>
+            </div>
+            <button onclick="shareThis()" class="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow transition">🔗 ${esc(t('shareStatus', lang))}</button>
+          </div>
+
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-${color}-100 text-${color}-700">${esc(t(tk.priority, lang))}</span>
+            <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">${esc(t(status, lang))}</span>
+            <span class="text-[10px] font-black px-2 py-0.5 rounded-full bg-${sla.tone}-100 text-${sla.tone}-700">⏱️ ${esc(sla.label)}</span>
+            ${(tk.reportCount || 1) > 1 ? `<span class="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">👥 ${tk.reportCount} ${esc(t('reportedBy', lang))}</span>` : ''}
+          </div>
+
+          <p class="text-sm font-bold leading-relaxed">${esc(displayText)}</p>
+          <div class="text-[11px] text-slate-500">🏢 ${esc(tk.department || '')} &bull; 🗂️ ${esc(tk.category || '')}</div>
+
+          ${beforeAfter}
+
+          <div class="pt-2 border-t border-slate-100">${timeline}</div>
+
+          ${typeof tk.lat === 'number' ? `<div id="miniMap" class="h-48 w-full rounded-xl border border-slate-200 overflow-hidden"></div>` : ''}
+        </div>`;
+
+      if (typeof tk.lat === 'number') {
+        setTimeout(() => {
+          if (miniMap) { miniMap.remove(); miniMap = null; }
+          miniMap = L.map('miniMap', { zoomControl: false, attributionControl: false }).setView([tk.lat, tk.lng], 16);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(miniMap);
+          L.marker([tk.lat, tk.lng]).addTo(miniMap);
+          setTimeout(() => miniMap.invalidateSize(), 100);
+        }, 0);
+      }
+    }
+
+    window.lookup = function() {
+      const id = document.getElementById('idInput').value.trim();
+      if (!id) return;
+      history.replaceState(null, '', `?id=${encodeURIComponent(id)}`);
+      if (unsub) unsub();
+
+      document.getElementById('result').innerHTML =
+        `<div class="text-center text-xs text-slate-400 py-10">Looking up ${esc(id)}…</div>`;
+
+      unsub = onSnapshot(query(complaintsRef, where('ticketId', '==', id)), (snap) => {
+        if (snap.empty) {
+          current = null;
+          document.getElementById('result').innerHTML =
+            `<div class="p-6 rounded-3xl bg-white border border-slate-200 text-center space-y-2">
+               <div class="text-2xl">🔍</div>
+               <div class="text-xs font-bold text-slate-700">No complaint found with reference ${esc(id)}</div>
+               <div class="text-[11px] text-slate-500">Check the reference and try again — it looks like TCK-2026-1234.</div>
+             </div>`;
+          return;
+        }
+        current = snap.docs[0].data();
+        paint(current);
+      }, (err) => {
+        console.error(err);
+        document.getElementById('result').innerHTML =
+          `<div class="text-center text-xs text-red-500 py-10">Couldn't reach the ticket register.</div>`;
       });
-
-      document.getElementById('authorityTicketList').innerHTML =
-        html || `<div class="text-center text-xs text-slate-400 py-10">No incidents match this filter.</div>`;
-    }
-
-    const q = query(complaintsRef, orderBy("timestamp", "desc"));
-    onSnapshot(q, (snapshot) => {
-      latestTickets = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      renderTickets(latestTickets);
-      renderMapMarkers(latestTickets);
-      enforceSla(latestTickets);
-    });
-
-    // Keep countdowns ticking and catch SLA breaches even with no new writes.
-    setInterval(() => {
-      if (!latestTickets.length) return;
-      renderTickets(latestTickets);
-      enforceSla(latestTickets);
-    }, 30000);
-
-    function showDashboard() {
-      document.getElementById('loginGate').classList.add('hidden');
-      document.getElementById('dashboard').classList.remove('hidden');
-      document.getElementById('logoutBtn').classList.remove('hidden');
-      paintFilterButtons();
-      initCityMap();
-      renderMapMarkers(latestTickets);
-      renderTickets(latestTickets);
-    }
-
-    function showLogin() {
-      document.getElementById('dashboard').classList.add('hidden');
-      document.getElementById('loginGate').classList.remove('hidden');
-      document.getElementById('logoutBtn').classList.add('hidden');
-    }
-
-    window.logoutAuthority = function() {
-      safeStore.remove(SESSION_KEY);
-      showLogin();
     };
 
-    document.getElementById('authorityForm').addEventListener('submit', function(e) {
-      e.preventDefault();
-      const email = document.getElementById('authorityEmail').value.trim();
-      const pass = document.getElementById('authorityPassword').value;
-      const alertEl = document.getElementById('authorityAlert');
-      if (email === AUTH_EMAIL && pass === AUTH_PASSWORD) {
-        safeStore.set(SESSION_KEY, 'true');
-        alertEl.classList.add('hidden');
-        showDashboard();
-      } else {
-        alertEl.innerText = "Invalid Authority Credentials.";
-        alertEl.classList.remove('hidden');
-      }
-    });
+    document.getElementById('idInput').addEventListener('keydown', e => { if (e.key === 'Enter') lookup(); });
 
-    if (safeStore.get(SESSION_KEY) === 'true') {
-      showDashboard();
-    } else {
-      showLogin();
+    const preset = new URLSearchParams(location.search).get('id');
+    if (preset) {
+      document.getElementById('idInput').value = preset;
+      lookup();
     }
   </script>
 </body>
