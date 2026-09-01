@@ -54,22 +54,17 @@
     /* Main Container */
     .app-main { max-width: 1400px; width: 100%; margin: 0 auto; padding: 2rem 1.5rem; flex: 1; }
 
-    /* Citizen Portal */
+    /* Portals */
     .portal-container { max-width: 720px; margin: 0 auto; }
     .portal-header { text-align: center; margin-bottom: 2rem; }
     .portal-header h1 { font-size: 1.875rem; font-weight: 800; letter-spacing: -0.025em; margin-bottom: 0.5rem; }
     .portal-header p { color: var(--text-secondary); font-size: 0.95rem; }
 
-    .demo-presets { background: #ffffff; border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
-    .preset-label { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); }
-    .preset-chip { background: var(--surface-subtle); border: 1px solid var(--border-color); padding: 0.35rem 0.75rem; border-radius: 9999px; font-size: 0.8125rem; font-weight: 600; color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; gap: 0.35rem; }
-    .preset-chip:hover { background: var(--primary-light); color: var(--primary); border-color: rgba(37, 99, 235, 0.3); }
-
     .form-card { background: var(--surface-card); border-radius: var(--radius-lg); border: 1px solid var(--border-color); box-shadow: var(--shadow-md); padding: 2rem; }
     .input-group { margin-bottom: 1.5rem; }
     .input-group label { display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 0.875rem; margin-bottom: 0.5rem; }
     .input-subtext { font-size: 0.75rem; font-weight: 500; color: var(--text-muted); }
-    textarea, input[type="text"] { width: 100%; border: 1.5px solid var(--border-color); border-radius: var(--radius-md); padding: 0.875rem 1rem; font-size: 0.95rem; }
+    textarea, input[type="text"], input[type="email"], input[type="password"] { width: 100%; border: 1.5px solid var(--border-color); border-radius: var(--radius-md); padding: 0.875rem 1rem; font-size: 0.95rem; }
     textarea:focus, input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12); }
 
     .multimodal-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
@@ -152,8 +147,8 @@
         <span class="brand-badge">Auto-Triage v2.4</span>
       </a>
 
-      <!-- View Selector -->
-      <div class="segmented-control">
+      <!-- View Selector (Hidden until logged in) -->
+      <div id="main-nav" class="segmented-control hidden">
         <button id="btn-tab-citizen" class="seg-btn active" onclick="switchView('citizen')">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
           Citizen Portal
@@ -173,19 +168,37 @@
 
   <main class="app-main">
     
+    <!-- VIEW 0: AUTH PORTAL -->
+    <section id="view-login" class="portal-container">
+      <div class="portal-header">
+        <h1>CivicSync Portal Access</h1>
+        <p>Log in or sign up to access the system.</p>
+      </div>
+      <div class="form-card">
+        <div class="segmented-control" style="margin-bottom: 1.5rem;">
+          <button id="tab-login-citizen" class="seg-btn active" onclick="switchLogin('citizen')">Citizen Access</button>
+          <button id="tab-login-authority" class="seg-btn" onclick="switchLogin('authority')">Authority Access</button>
+        </div>
+
+        <form id="authForm">
+          <div class="input-group">
+            <label>Email</label>
+            <input type="email" id="authEmail" required />
+          </div>
+          <div class="input-group">
+            <label>Password</label>
+            <input type="password" id="authPassword" required />
+          </div>
+          <button type="submit" class="btn-submit">Login / Sign Up</button>
+        </form>
+      </div>
+    </section>
+
     <!-- VIEW 1: CITIZEN SUBMISSION PORTAL -->
-    <section id="view-citizen" class="portal-container">
+    <section id="view-citizen" class="portal-container hidden">
       <div class="portal-header">
         <h1>Submit a Civic Grievance</h1>
         <p>Your report is analyzed instantly by AI for priority routing and dispatch.</p>
-      </div>
-
-      <!-- Quick Scenario Loaders -->
-      <div class="demo-presets">
-        <span class="preset-label">Test Real Scenarios:</span>
-        <div class="preset-chip" onclick="loadPreset('wire')">⚡ Sparking Wire (Critical)</div>
-        <div class="preset-chip" onclick="loadPreset('water')">💧 Sewage Leak (High)</div>
-        <div class="preset-chip" onclick="loadPreset('pothole')">🕳️ Small Pothole (Medium)</div>
       </div>
 
       <!-- Form Card -->
@@ -197,8 +210,7 @@
           </div>
 
           <div class="multimodal-row">
-            
-            <!-- Updated Image Dropzone with hidden input -->
+            <!-- Image Dropzone with hidden input -->
             <div class="dropzone" id="imageDropzone" onclick="triggerImageUpload()">
               <input type="file" id="imageInput" accept="image/*" class="hidden" onchange="handleImageChange(event)" />
               <div class="dropzone-icon">📷</div>
@@ -279,33 +291,49 @@
 
     // Global states
     window.currentFilter = 'all';
-    window.capturedImageBase64 = null; // Stored here for API payload
-    window.capturedAudioBlob = null;   // Stored here for API payload
+    window.capturedImageBase64 = null;
+    window.capturedAudioBlob = null;
     
     let mediaRecorder;
     let audioChunks = [];
     let isRecording = false;
+    let currentAuthTab = 'citizen';
 
-    // 2. UI Navigation & Helpers
+    // 2. Auth Logic
+    window.switchLogin = function(type) {
+      currentAuthTab = type;
+      document.getElementById('tab-login-citizen').classList.toggle('active', type === 'citizen');
+      document.getElementById('tab-login-authority').classList.toggle('active', type === 'authority');
+    };
+
     window.switchView = function(view) {
+      document.getElementById('view-login').classList.add('hidden');
       document.getElementById('view-citizen').classList.toggle('hidden', view !== 'citizen');
       document.getElementById('view-authority').classList.toggle('hidden', view !== 'authority');
+      
+      // Show header navigation only after login
+      document.getElementById('main-nav').classList.remove('hidden');
       document.getElementById('btn-tab-citizen').classList.toggle('active', view === 'citizen');
       document.getElementById('btn-tab-authority').classList.toggle('active', view === 'authority');
     };
 
-    const presets = {
-      wire: { text: "There is an exposed live cable hanging from the pole right in front of the school gate. It is throwing sparks every few minutes.", loc: "Zone 4 - School District, South Gate", hasPhoto: true },
-      water: { text: "Drinking water pipeline broke open and dirty drain water is leaking into it. Foul smell in the whole neighborhood.", loc: "Zone 2 - Ward 14, East Market", hasPhoto: false },
-      pothole: { text: "Minor pavement crack and small pothole developing along the sidewalk.", loc: "Zone 1 - Main Avenue", hasPhoto: true }
-    };
+    document.getElementById('authForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const email = document.getElementById('authEmail').value;
+      const pass = document.getElementById('authPassword').value;
 
-    window.loadPreset = function(key) {
-      const p = presets[key];
-      document.getElementById('complaintText').value = p.text;
-      document.getElementById('locationInput').value = p.loc;
-      if (p.hasPhoto) document.getElementById('imageLabel').innerText = "📷 photo_evidence.jpg attached";
-    };
+      if (currentAuthTab === 'citizen') {
+        // Open signup/login for all citizens
+        switchView('citizen');
+      } else {
+        // Restrict access: only a certain government account can login
+        if (email === "admin@gov.in" && pass === "GovAdmin2026!") {
+          switchView('authority');
+        } else {
+          alert("Access Denied: Only authorized government accounts can log in here.");
+        }
+      }
+    });
 
     // 3. Image Capture Logic (File API)
     window.triggerImageUpload = function() {
@@ -316,8 +344,6 @@
       const file = event.target.files[0];
       if (file) {
         document.getElementById('imageLabel').innerText = `📷 ${file.name} (Attached)`;
-        
-        // Convert to Base64 for the AI API
         const reader = new FileReader();
         reader.onload = function(e) {
           window.capturedImageBase64 = e.target.result; 
@@ -333,49 +359,37 @@
 
       if (!isRecording) {
         try {
-          // Request microphone access
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
           mediaRecorder = new MediaRecorder(stream);
           audioChunks = [];
 
-          // Collect audio data
           mediaRecorder.ondataavailable = event => {
             audioChunks.push(event.data);
           };
 
-          // Handle recording stop
           mediaRecorder.onstop = async () => {
             window.capturedAudioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-            
-            // UI Updates
             btn.classList.remove('recording');
             label.innerText = "Transcribing... ⏳";
             
-            // TODO: Here is where you would send window.capturedAudioBlob to OpenAI Whisper API.
-            // For demo purposes, we simulate the transcription delay:
             setTimeout(() => {
               label.innerText = "Transcribed Voice Note ✓";
               document.getElementById('complaintText').value = "Live electric cable fell onto the wet footpath after the thunderstorm, children walk here.";
             }, 1500);
           };
 
-          // Start recording
           mediaRecorder.start();
           isRecording = true;
           
-          // UI Updates
           btn.classList.add('recording');
           label.innerText = "Listening... (Click to Stop)";
-
         } catch (err) {
           alert("Microphone access denied or not available in this browser.");
           console.error(err);
         }
       } else {
-        // Stop recording
         mediaRecorder.stop();
         isRecording = false;
-        // Stop all microphone tracks so the browser red recording dot goes away
         mediaRecorder.stream.getTracks().forEach(track => track.stop());
       }
     };
@@ -383,83 +397,64 @@
     // 5. Dashboard Filters
     window.filterQueue = function(type) {
       window.currentFilter = type;
-      
       document.querySelectorAll('.filter-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.filter === type);
       });
-      
       document.querySelectorAll('.ticket-card').forEach(card => {
         card.style.display = (type === 'all' || card.dataset.priority === type) ? 'grid' : 'none';
       });
     };
 
-    // 6. AI Triage Simulation
-    // In a real app, this logic lives in your backend/Cloud Functions via GPT-4o / Gemini
-    function analyzeComplaint(text, location) {
-      const lower = text.toLowerCase();
-      if (lower.includes('spark') || lower.includes('wire') || lower.includes('electric') || lower.includes('shock')) {
-        return { category: "Electricity Board", department: "DISCOM Rapid Response", score: 89, level: "critical", sla: "🚨 4h SLA (Urgent)", reason: "Immediate electrocution risk flagged." };
-      } else if (lower.includes('sewage') || lower.includes('water') || lower.includes('leak')) {
-        return { category: "Water Supply", department: "Water & Sanitation Division", score: 75, level: "high", sla: "⚠️ 24h SLA", reason: "Public health hazard detected." };
+    // 6. Submit to FastAPI Backend
+    document.getElementById('grievanceForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      
+      const btn = document.getElementById('submitBtn');
+      const text = document.getElementById('complaintText').value;
+      const loc = document.getElementById('locationInput').value;
+
+      btn.disabled = true;
+      btn.innerHTML = `<span style="animation: pulse 1s infinite">☁️ Analyzing via AI Server...</span>`;
+
+      const formData = new FormData();
+      formData.append('text', text);
+      formData.append('location', loc);
+
+      const imageInput = document.getElementById('imageInput');
+      if (imageInput.files.length > 0) {
+        formData.append('image', imageInput.files[0]);
       }
-      return { category: "Roads & Highways", department: "Public Works Department", score: 42, level: "medium", sla: "3-Day SLA", reason: "Routine maintenance ticket." };
-    }
-// 7. Submit to FastAPI Backend
-document.getElementById('grievanceForm').addEventListener('submit', async function(e) {
-  e.preventDefault();
-  
-  const btn = document.getElementById('submitBtn');
-  const text = document.getElementById('complaintText').value;
-  const loc = document.getElementById('locationInput').value;
 
-  btn.disabled = true;
-  btn.innerHTML = `<span style="animation: pulse 1s infinite">☁️ Analyzing via AI Server...</span>`;
+      if (window.capturedAudioBlob) {
+        formData.append('audio', window.capturedAudioBlob, 'voice_note.webm');
+      }
 
-  // Create FormData object to handle text, audio files, and image files securely
-  const formData = new FormData();
-  formData.append('text', text);
-  formData.append('location', loc);
+      try {
+        const response = await fetch('http://localhost:8000/api/submit-complaint', {
+          method: 'POST',
+          body: formData 
+        });
 
-  // Append Image File if captured
-  const imageInput = document.getElementById('imageInput');
-  if (imageInput.files.length > 0) {
-    formData.append('image', imageInput.files[0]);
-  }
-
-  // Append Audio Blob if recorded
-  if (window.capturedAudioBlob) {
-    formData.append('audio', window.capturedAudioBlob, 'voice_note.webm');
-  }
-
-  try {
-    // Send data to your FastAPI backend
-    const response = await fetch('http://localhost:8000/api/submit-complaint', {
-      method: 'POST',
-      body: formData // Note: Do NOT set Content-Type header; the browser sets it automatically with the boundary for FormData
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+          document.getElementById('grievanceForm').reset();
+          document.getElementById('imageLabel').innerText = "Attach Evidence Photo";
+          document.getElementById('voiceLabel').innerText = "Record Voice Note";
+          window.capturedAudioBlob = null;
+          
+          window.switchView('authority');
+        }
+      } catch (error) {
+        console.error("Backend Error: ", error);
+        alert("Error saving! Make sure your FastAPI server is running on localhost:8000.");
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg> Execute AI Triage & Dispatch`;
+      }
     });
 
-    const result = await response.json();
-    
-    if (result.status === 'success') {
-      // Reset form state
-      document.getElementById('grievanceForm').reset();
-      document.getElementById('imageLabel').innerText = "Attach Evidence Photo";
-      document.getElementById('voiceLabel').innerText = "Record Voice Note";
-      window.capturedAudioBlob = null;
-      
-      // Go to dashboard (Firebase onSnapshot will auto-pull the new ticket)
-      window.switchView('authority');
-    }
-  } catch (error) {
-    console.error("Backend Error: ", error);
-    alert("Error saving! Make sure your FastAPI server is running on localhost:8000.");
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg> Execute AI Triage & Dispatch`;
-  }
-});
-
-    // 8. Read from Firebase (Real-time Listener)
+    // 7. Read from Firebase (Real-time Listener)
     const q = query(complaintsRef, orderBy("timestamp", "desc"));
     
     onSnapshot(q, (snapshot) => {
@@ -473,8 +468,6 @@ document.getElementById('grievanceForm').addEventListener('submit', async functi
 
       snapshot.forEach((doc) => {
         const data = doc.data();
-        
-        // Respect active filter
         const displayStyle = (window.currentFilter === 'all' || window.currentFilter === data.level) ? 'grid' : 'none';
 
         const cardHTML = `
