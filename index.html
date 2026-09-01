@@ -159,6 +159,8 @@
         </button>
       </div>
 
+      <button id="logoutBtn" class="btn-action hidden" onclick="logout()" style="white-space: nowrap;">Log Out</button>
+
       <div class="system-status">
         <div class="status-dot"></div>
         <span>DISCOM / Municipal Gateway Online</span>
@@ -187,10 +189,15 @@
           </div>
           <div class="input-group">
             <label>Password</label>
-            <input type="password" id="authPassword" required />
+            <input type="password" id="authPassword" required minlength="6" />
           </div>
-          <button type="submit" class="btn-submit">Login / Sign Up</button>
+          <p id="authError" class="hidden" style="color: var(--critical); font-size: 0.85rem; margin-bottom: 1rem; text-align: center;"></p>
+          <button type="submit" class="btn-submit" id="authSubmitBtn">Login</button>
         </form>
+        <p id="authToggleRow" style="text-align: center; margin-top: 1.25rem; font-size: 0.875rem; color: var(--text-secondary);">
+          <span id="authToggleText">Don't have an account?</span>
+          <a href="#" id="authToggleLink" onclick="toggleAuthMode(event)" style="color: var(--primary); font-weight: 700; text-decoration: none;">Sign Up</a>
+        </p>
       </div>
     </section>
 
@@ -273,6 +280,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getFirestore, collection, addDoc, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
     // 1. Firebase Config
     const firebaseConfig = {
@@ -287,6 +295,7 @@
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
+    const auth = getAuth(app);
     const complaintsRef = collection(db, "complaints");
 
     // Global states
@@ -299,6 +308,7 @@
     let isRecording = false;
     let currentAuthTab = 'citizen';
     let currentUserRole = null;
+    let authMode = 'login'; // 'login' or 'signup' (citizen portal only)
 
     const GEMINI_API_KEY = "AQ.Ab8RN6ILKvYESKL3iVvEA1IsOg7ul-i5cdC1h3vdeVCNFVSaNQ";
 
@@ -307,6 +317,81 @@
       currentAuthTab = type;
       document.getElementById('tab-login-citizen').classList.toggle('active', type === 'citizen');
       document.getElementById('tab-login-authority').classList.toggle('active', type === 'authority');
+
+      // Authority accounts are pre-provisioned - no self-service sign up there.
+      authMode = 'login';
+      document.getElementById('authToggleRow').classList.toggle('hidden', type === 'authority');
+      updateAuthUI();
+    };
+
+    window.toggleAuthMode = function(e) {
+      e.preventDefault();
+      authMode = authMode === 'login' ? 'signup' : 'login';
+      updateAuthUI();
+    };
+
+    function updateAuthUI() {
+      const submitBtn = document.getElementById('authSubmitBtn');
+      const toggleText = document.getElementById('authToggleText');
+      const toggleLink = document.getElementById('authToggleLink');
+      const errorEl = document.getElementById('authError');
+      errorEl.classList.add('hidden');
+      document.getElementById('authForm').reset();
+
+      if (authMode === 'signup') {
+        submitBtn.innerText = 'Create Account';
+        toggleText.innerText = 'Already have an account?';
+        toggleLink.innerText = 'Log In';
+      } else {
+        submitBtn.innerText = 'Login';
+        toggleText.innerText = "Don't have an account?";
+        toggleLink.innerText = 'Sign Up';
+      }
+    }
+
+    function friendlyAuthError(err) {
+      const code = err && err.code;
+      switch (code) {
+        case 'auth/email-already-in-use':
+          return 'An account with this email already exists. Try logging in instead.';
+        case 'auth/invalid-email':
+          return 'Please enter a valid email address.';
+        case 'auth/weak-password':
+          return 'Password should be at least 6 characters.';
+        case 'auth/user-not-found':
+        case 'auth/wrong-password':
+        case 'auth/invalid-credential':
+          return 'Incorrect email or password.';
+        case 'auth/too-many-requests':
+          return 'Too many attempts. Please wait a moment and try again.';
+        case 'auth/operation-not-allowed':
+          return 'Sign-ups are disabled for this project. In the Firebase Console, go to Authentication → Sign-in method and enable "Email/Password".';
+        case 'auth/unauthorized-domain':
+          return 'This page\'s domain isn\'t authorized. In the Firebase Console, go to Authentication → Settings → Authorized domains and add it (e.g. localhost if testing locally).';
+        case 'auth/network-request-failed':
+          return 'Network error reaching Firebase. Check your internet connection and any ad blockers/VPN.';
+        case 'auth/invalid-api-key':
+        case 'auth/api-key-not-valid.-please-pass-a-valid-api-key.':
+          return 'Firebase API key is invalid or restricted. Check API key restrictions in Google Cloud Console → APIs & Services → Credentials.';
+        case 'auth/configuration-not-found':
+          return 'Email/Password sign-in isn\'t configured for this Firebase project yet. Enable it in Authentication → Sign-in method.';
+        default:
+          // Surface the real reason instead of a generic message so it's actionable.
+          return `Sign-in failed${code ? ` (${code})` : ''}: ${(err && err.message) || 'unknown error'}. Open the browser console for full details.`;
+      }
+    }
+
+    window.logout = async function() {
+      if (currentUserRole === 'citizen') {
+        try { await signOut(auth); } catch (err) { console.error("Sign out error:", err); }
+      }
+      currentUserRole = null;
+      document.getElementById('view-citizen').classList.add('hidden');
+      document.getElementById('view-authority').classList.add('hidden');
+      document.getElementById('view-login').classList.remove('hidden');
+      document.getElementById('main-nav').classList.add('hidden');
+      document.getElementById('logoutBtn').classList.add('hidden');
+      switchLogin('citizen');
     };
 
     window.switchView = function(view) {
@@ -326,27 +411,56 @@
       document.getElementById('btn-tab-citizen').classList.toggle('active', view === 'citizen');
       document.getElementById('btn-tab-authority').classList.toggle('active', view === 'authority');
       document.getElementById('btn-tab-authority').classList.toggle('hidden', currentUserRole !== 'authority');
+      document.getElementById('logoutBtn').classList.remove('hidden');
     };
 
-    document.getElementById('authForm').addEventListener('submit', function(e) {
+    document.getElementById('authForm').addEventListener('submit', async function(e) {
       e.preventDefault();
-      const email = document.getElementById('authEmail').value;
+      const email = document.getElementById('authEmail').value.trim();
       const pass = document.getElementById('authPassword').value;
+      const errorEl = document.getElementById('authError');
+      const submitBtn = document.getElementById('authSubmitBtn');
+      errorEl.classList.add('hidden');
 
-      if (currentAuthTab === 'citizen') {
-        if (!email || !pass) {
-          alert("Please enter your citizen email and password.");
-          return;
-        }
-        currentUserRole = 'citizen';
-        switchView('citizen');
-      } else {
+      if (currentAuthTab === 'authority') {
         if (email === "admin@gov.in" && pass === "GovAdmin2026!") {
           currentUserRole = 'authority';
           switchView('authority');
         } else {
-          alert("Access Denied: Only authorized government accounts can log in here.");
+          errorEl.innerText = "Access Denied: Only authorized government accounts can log in here.";
+          errorEl.classList.remove('hidden');
         }
+        return;
+      }
+
+      // Citizen portal - backed by real Firebase Authentication (email/password)
+      submitBtn.disabled = true;
+      const originalLabel = submitBtn.innerText;
+      submitBtn.innerText = authMode === 'signup' ? 'Creating Account...' : 'Logging In...';
+
+      try {
+        if (authMode === 'signup') {
+          await createUserWithEmailAndPassword(auth, email, pass);
+        } else {
+          await signInWithEmailAndPassword(auth, email, pass);
+        }
+        currentUserRole = 'citizen';
+        switchView('citizen');
+      } catch (err) {
+        console.error("Firebase Auth error - code:", err.code, "| message:", err.message, "| full error:", err);
+        errorEl.innerText = friendlyAuthError(err);
+        errorEl.classList.remove('hidden');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerText = originalLabel;
+      }
+    });
+
+    // Keep a citizen signed in across page reloads (Firebase persists the session locally)
+    onAuthStateChanged(auth, (user) => {
+      if (user && currentUserRole === null) {
+        currentUserRole = 'citizen';
+        switchView('citizen');
       }
     });
 
