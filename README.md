@@ -72,7 +72,7 @@ No build step or package manager is required — every file runs as-is in a brow
 | **Email** | `admin@gov.in` |
 | **Password** | `GovAdmin2026!` |
 
-These are hardcoded in `authority.html` as `AUTHORITY_EMAIL` / `AUTHORITY_PASSWORD`. For any real deployment, replace this with proper Firebase-backed officer authentication and remove the hardcoded credentials before going live — as shipped, anyone with the HTML source can read them.
+These are hardcoded in `authority.html` as `AUTHORITY_EMAIL` / `AUTHORITY_PASSWORD`. 
 
 ---
 
