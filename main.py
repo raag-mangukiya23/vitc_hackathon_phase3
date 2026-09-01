@@ -1,64 +1,33 @@
-from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.middleware.cors import CORSMiddleware
-import firebase_admin
-from firebase_admin import credentials, firestore
-import uuid
-import time
+"""
+Legacy compatibility shim for CivicSync.
 
-# 1. Connect to Firebase using the file you just downloaded
-cred = credentials.Certificate("firebase-credentials.json")
-firebase_admin.initialize_app(cred)
-db = firestore.client()
+The app no longer relies on a Python FastAPI backend. It runs directly in the
+browser and writes complaint data to Firebase Firestore. This file is kept as a
+minimal ASGI app so `uvicorn main:app` does not crash if someone starts it by
+mistake.
+"""
 
-# 2. Start the FastAPI application
-app = FastAPI()
 
-# 3. Allow your HTML file to communicate with this server
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"], 
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+class App:
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return
 
-# 4. Create the endpoint that receives data from your HTML form
-@app.post("/api/submit-complaint")
-async def submit_complaint(
-    text: str = Form(...),
-    location: str = Form(...),
-    image: UploadFile = File(None),
-    audio: UploadFile = File(None)
-):
-    # (Later, you will pass the 'image' and 'audio' variables to OpenAI/Gemini here)
-    
-    # For now, we simulate AI keyword analysis on the text:
-    lower_text = text.lower()
-    if any(word in lower_text for word in ['spark', 'wire', 'electric', 'shock']):
-        category, dept, score, level, sla, reason = "Electricity Board", "DISCOM Rapid Response", 89, "critical", "🚨 4h SLA (Urgent)", "Immediate electrocution risk flagged."
-    elif any(word in lower_text for word in ['sewage', 'water', 'leak']):
-        category, dept, score, level, sla, reason = "Water Supply", "Water & Sanitation", 75, "high", "⚠️ 24h SLA", "Public health hazard detected."
-    else:
-        category, dept, score, level, sla, reason = "Roads & Highways", "Public Works", 42, "medium", "3-Day SLA", "Routine maintenance ticket."
+        body = (
+            b'{"status":"ok","message":"FastAPI backend removed. The app now '
+            b'works directly in the browser with Firebase."}'
+        )
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(body)).encode("ascii")),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
 
-    # Create a unique ticket ID
-    ticket_id = f"TCK-{uuid.uuid4().hex[:6].upper()}"
-    
-    # Package the data
-    complaint_data = {
-        "ticketId": ticket_id,
-        "text": text,
-        "location": location,
-        "category": category,
-        "department": dept,
-        "score": score,
-        "level": level,
-        "sla": sla,
-        "reason": reason,
-        "timestamp": int(time.time() * 1000)
-    }
 
-    # Save it securely to Firebase Firestore
-    db.collection("complaints").add(complaint_data)
-
-    return {"status": "success", "ticketId": ticket_id}
+app = App()

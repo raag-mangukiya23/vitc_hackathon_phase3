@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -298,6 +298,9 @@
     let audioChunks = [];
     let isRecording = false;
     let currentAuthTab = 'citizen';
+    let currentUserRole = null;
+
+    const GEMINI_API_KEY = "AQ.Ab8RN6ILKvYESKL3iVvEA1IsOg7ul-i5cdC1h3vdeVCNFVSaNQ";
 
     // 2. Auth Logic
     window.switchLogin = function(type) {
@@ -307,14 +310,22 @@
     };
 
     window.switchView = function(view) {
+      if (view === 'authority' && currentUserRole !== 'authority') {
+        return;
+      }
+
+      if (view === 'citizen' && !['citizen', 'authority'].includes(currentUserRole)) {
+        return;
+      }
+
       document.getElementById('view-login').classList.add('hidden');
       document.getElementById('view-citizen').classList.toggle('hidden', view !== 'citizen');
       document.getElementById('view-authority').classList.toggle('hidden', view !== 'authority');
       
-      // Show header navigation only after login
       document.getElementById('main-nav').classList.remove('hidden');
       document.getElementById('btn-tab-citizen').classList.toggle('active', view === 'citizen');
       document.getElementById('btn-tab-authority').classList.toggle('active', view === 'authority');
+      document.getElementById('btn-tab-authority').classList.toggle('hidden', currentUserRole !== 'authority');
     };
 
     document.getElementById('authForm').addEventListener('submit', function(e) {
@@ -323,11 +334,15 @@
       const pass = document.getElementById('authPassword').value;
 
       if (currentAuthTab === 'citizen') {
-        // Open signup/login for all citizens
+        if (!email || !pass) {
+          alert("Please enter your citizen email and password.");
+          return;
+        }
+        currentUserRole = 'citizen';
         switchView('citizen');
       } else {
-        // Restrict access: only a certain government account can login
         if (email === "admin@gov.in" && pass === "GovAdmin2026!") {
+          currentUserRole = 'authority';
           switchView('authority');
         } else {
           alert("Access Denied: Only authorized government accounts can log in here.");
@@ -335,7 +350,38 @@
       }
     });
 
-    // 3. Image Capture Logic (File API)
+    // 3. AI Multimodal Processing Function
+    async function generateComplaintText(base64Data, mimeType, isAudio = false) {
+      const prompt = isAudio 
+        ? "Transcribe this audio and summarize the civic complaint in one clear sentence."
+        : "Analyze this image and describe the civic hazard or issue shown in one clear sentence for a grievance ticket.";
+
+      const rawBase64 = base64Data.split(',')[1]; 
+
+      try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { text: prompt },
+                { inlineData: { mimeType: mimeType, data: rawBase64 } }
+              ]
+            }]
+          })
+        });
+        const data = await response.json();
+        if (data.candidates && data.candidates.length > 0) {
+           return data.candidates[0].content.parts[0].text.trim();
+        }
+      } catch (err) {
+        console.error("Gemini API Error:", err);
+      }
+      return null;
+    }
+
+    // 4. Image Capture Logic
     window.triggerImageUpload = function() {
       document.getElementById('imageInput').click();
     };
@@ -343,16 +389,24 @@
     window.handleImageChange = function(event) {
       const file = event.target.files[0];
       if (file) {
-        document.getElementById('imageLabel').innerText = `📷 ${file.name} (Attached)`;
+        const label = document.getElementById('imageLabel');
+        label.innerText = "Analyzing Image... ⏳";
+        
         const reader = new FileReader();
-        reader.onload = function(e) {
+        reader.onload = async function(e) {
           window.capturedImageBase64 = e.target.result; 
+          
+          const generatedText = await generateComplaintText(e.target.result, file.type, false);
+          if (generatedText) {
+            document.getElementById('complaintText').value = generatedText;
+          }
+          label.innerText = `📷 ${file.name} (Attached)`;
         };
         reader.readAsDataURL(file);
       }
     };
 
-    // 4. Audio Capture Logic (MediaRecorder API)
+    // 5. Audio Capture Logic
     window.toggleVoiceRecording = async function() {
       const btn = document.getElementById('voiceBtn');
       const label = document.getElementById('voiceLabel');
@@ -370,12 +424,17 @@
           mediaRecorder.onstop = async () => {
             window.capturedAudioBlob = new Blob(audioChunks, { type: 'audio/webm' });
             btn.classList.remove('recording');
-            label.innerText = "Transcribing... ⏳";
+            label.innerText = "Transcribing Audio... ⏳";
             
-            setTimeout(() => {
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+              const generatedText = await generateComplaintText(e.target.result, 'audio/webm', true);
+              if (generatedText) {
+                 document.getElementById('complaintText').value = generatedText;
+              }
               label.innerText = "Transcribed Voice Note ✓";
-              document.getElementById('complaintText').value = "Live electric cable fell onto the wet footpath after the thunderstorm, children walk here.";
-            }, 1500);
+            };
+            reader.readAsDataURL(window.capturedAudioBlob);
           };
 
           mediaRecorder.start();
@@ -384,7 +443,7 @@
           btn.classList.add('recording');
           label.innerText = "Listening... (Click to Stop)";
         } catch (err) {
-          alert("Microphone access denied or not available in this browser.");
+          alert("Microphone access denied or not available.");
           console.error(err);
         }
       } else {
@@ -394,7 +453,7 @@
       }
     };
 
-    // 5. Dashboard Filters
+    // 6. Dashboard Filters
     window.filterQueue = function(type) {
       window.currentFilter = type;
       document.querySelectorAll('.filter-btn').forEach(btn => {
@@ -405,7 +464,7 @@
       });
     };
 
-    // 6. Submit to FastAPI Backend
+    // 7. Save the grievance directly to Firestore
     document.getElementById('grievanceForm').addEventListener('submit', async function(e) {
       e.preventDefault();
       
@@ -416,45 +475,33 @@
       btn.disabled = true;
       btn.innerHTML = `<span style="animation: pulse 1s infinite">☁️ Analyzing via AI Server...</span>`;
 
-      const formData = new FormData();
-      formData.append('text', text);
-      formData.append('location', loc);
-
-      const imageInput = document.getElementById('imageInput');
-      if (imageInput.files.length > 0) {
-        formData.append('image', imageInput.files[0]);
-      }
-
-      if (window.capturedAudioBlob) {
-        formData.append('audio', window.capturedAudioBlob, 'voice_note.webm');
-      }
-
       try {
-        const response = await fetch('http://localhost:8000/api/submit-complaint', {
-          method: 'POST',
-          body: formData 
+        await addDoc(complaintsRef, {
+          text,
+          location: loc,
+          priority: 'medium',
+          status: 'Submitted',
+          department: 'Municipal Services',
+          timestamp: new Date(),
+          hasImage: document.getElementById('imageInput').files.length > 0,
+          hasVoiceNote: Boolean(window.capturedAudioBlob)
         });
 
-        const result = await response.json();
-        
-        if (result.status === 'success') {
-          document.getElementById('grievanceForm').reset();
-          document.getElementById('imageLabel').innerText = "Attach Evidence Photo";
-          document.getElementById('voiceLabel').innerText = "Record Voice Note";
-          window.capturedAudioBlob = null;
-          
-          window.switchView('authority');
-        }
+        document.getElementById('grievanceForm').reset();
+        document.getElementById('imageLabel').innerText = "Attach Evidence Photo";
+        document.getElementById('voiceLabel').innerText = "Record Voice Note";
+        window.capturedAudioBlob = null;
+        window.switchView('citizen');
       } catch (error) {
-        console.error("Backend Error: ", error);
-        alert("Error saving! Make sure your FastAPI server is running on localhost:8000.");
+        console.error("Firestore Error: ", error);
+        alert("Error saving the grievance. Check your Firebase connection and try again.");
       } finally {
         btn.disabled = false;
         btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg> Execute AI Triage & Dispatch`;
       }
     });
 
-    // 7. Read from Firebase (Real-time Listener)
+    // 8. Read from Firebase (Real-time Listener)
     const q = query(complaintsRef, orderBy("timestamp", "desc"));
     
     onSnapshot(q, (snapshot) => {
